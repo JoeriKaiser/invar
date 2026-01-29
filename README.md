@@ -2,7 +2,9 @@
 
 ![invar logo](./assets/logo_black.png)
 
-A terminal task manager built with Go and Charmbracelet libraries.
+## A terminal task manager built with Go and Charmbracelet libraries.
+
+![terminal screenshot](./assets/terminal_screenshot.png)
 
 ## Installation
 

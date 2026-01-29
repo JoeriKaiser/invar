@@ -9,6 +9,12 @@
 ## Installation
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/JoeriKaiser/invar/main/install.sh | sh
+```
+
+Or build from source:
+
+```bash
 go build ./cmd/invar
 ```
 

@@ -25,6 +25,8 @@ const (
 	viewInput
 	viewDeadline
 	viewArchive
+	viewPriority
+	viewDeadlineMenu
 )
 
 type inputMode int
@@ -33,6 +35,11 @@ const (
 	modeNew inputMode = iota
 	modeEdit
 )
+
+type menuItem struct {
+	label string
+	style lipgloss.Style
+}
 
 type keyMap struct {
 	Up       key.Binding
@@ -73,9 +80,10 @@ type Model struct {
 	textinput textinput.Model
 	tasks     []*task.Task
 	editTask  *task.Task
-	cursor    int
-	scroll    int
-	width     int
+	cursor     int
+	scroll     int
+	menuCursor int
+	width      int
 	height    int
 }
 
@@ -182,6 +190,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleInputKey(msg)
 		case viewDeadline:
 			return m.handleDeadlineKey(msg)
+		case viewPriority:
+			return m.handlePriorityKey(msg)
+		case viewDeadlineMenu:
+			return m.handleDeadlineMenuKey(msg)
 		}
 
 		switch {
@@ -246,9 +258,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.Priority):
 			if t := m.selectedTask(); t != nil {
-				t.CyclePriority()
-				m.store.Save(t)
-				m.loadTasks()
+				m.view = viewPriority
+				m.editTask = t
+				switch t.Priority {
+				case task.PriorityHigh:
+					m.menuCursor = 0
+				case task.PriorityMedium:
+					m.menuCursor = 1
+				case task.PriorityLow:
+					m.menuCursor = 2
+				}
 			}
 		case key.Matches(msg, m.keys.Edit):
 			if t := m.selectedTask(); t != nil {
@@ -261,11 +280,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.Deadline):
 			if t := m.selectedTask(); t != nil {
-				m.view = viewDeadline
+				m.view = viewDeadlineMenu
 				m.editTask = t
-				m.textinput.SetValue("")
-				m.textinput.Focus()
-				return m, textinput.Blink
+				m.menuCursor = 0
 			}
 		}
 	}
@@ -279,7 +296,7 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = viewList
 		m.editTask = nil
 		return m, nil
-	case "ctrl+d":
+	case "enter":
 		content := m.textarea.Value()
 		if content != "" {
 			if m.inputMode == modeEdit && m.editTask != nil {
@@ -294,6 +311,9 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = viewList
 		m.editTask = nil
 		m.textarea.SetValue("")
+		return m, nil
+	case "shift+enter":
+		m.textarea, _ = m.textarea.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -325,12 +345,114 @@ func (m Model) handleDeadlineKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) handlePriorityKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.view = viewList
+		m.editTask = nil
+		return m, nil
+	case "up", "k":
+		if m.menuCursor > 0 {
+			m.menuCursor--
+		}
+	case "down", "j":
+		if m.menuCursor < 2 {
+			m.menuCursor++
+		}
+	case "enter":
+		if m.editTask != nil {
+			priorities := []task.Priority{task.PriorityHigh, task.PriorityMedium, task.PriorityLow}
+			m.editTask.SetPriority(priorities[m.menuCursor])
+			m.store.Save(m.editTask)
+			m.loadTasks()
+		}
+		m.view = viewList
+		m.editTask = nil
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) deadlineMenuItemCount() int {
+	if m.editTask != nil && m.editTask.Deadline != nil {
+		return 5
+	}
+	return 4
+}
+
+func (m Model) handleDeadlineMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	maxIdx := m.deadlineMenuItemCount() - 1
+	switch msg.String() {
+	case "esc":
+		m.view = viewList
+		m.editTask = nil
+		return m, nil
+	case "up", "k":
+		if m.menuCursor > 0 {
+			m.menuCursor--
+		}
+	case "down", "j":
+		if m.menuCursor < maxIdx {
+			m.menuCursor++
+		}
+	case "enter":
+		if m.editTask == nil {
+			m.view = viewList
+			return m, nil
+		}
+		switch m.menuCursor {
+		case 0: // Today
+			d, _ := date.Parse("today")
+			m.editTask.SetDeadline(d)
+			m.store.Save(m.editTask)
+			m.loadTasks()
+			m.view = viewList
+			m.editTask = nil
+		case 1: // Tomorrow
+			d, _ := date.Parse("tomorrow")
+			m.editTask.SetDeadline(d)
+			m.store.Save(m.editTask)
+			m.loadTasks()
+			m.view = viewList
+			m.editTask = nil
+		case 2: // Next week
+			d, _ := date.Parse("next week")
+			m.editTask.SetDeadline(d)
+			m.store.Save(m.editTask)
+			m.loadTasks()
+			m.view = viewList
+			m.editTask = nil
+		case 3: // Custom
+			m.view = viewDeadline
+			m.textinput.SetValue("")
+			m.textinput.Focus()
+			return m, textinput.Blink
+		case 4: // Clear deadline
+			m.editTask.SetDeadline(nil)
+			m.store.Save(m.editTask)
+			m.loadTasks()
+			m.view = viewList
+			m.editTask = nil
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
 func (m Model) View() string {
 	switch m.view {
 	case viewInput:
 		return m.viewOverlay("input")
 	case viewDeadline:
 		return m.viewOverlay("deadline")
+	case viewPriority:
+		return m.viewMenuOverlay("Priority", []menuItem{
+			{label: " HIGH ", style: ui.PriorityPillHigh},
+			{label: " MED ", style: ui.PriorityPillMed},
+			{label: " LOW ", style: ui.PriorityPillLow},
+		})
+	case viewDeadlineMenu:
+		return m.viewDeadlineMenuOverlay()
 	}
 	return m.viewDashboard()
 }
@@ -380,11 +502,8 @@ func (m Model) viewDashboard() string {
 	}
 
 	// Pad empty space if fewer tasks than visible slots.
-	emptyRow := lipgloss.NewStyle().
-		Width(inner).
-		Render("")
 	for len(rows) < vis {
-		rows = append(rows, emptyRow+"\n"+emptyRow+"\n"+emptyRow)
+		rows = append(rows, strings.Repeat("\n", 3))
 	}
 
 	taskArea := strings.Join(rows, "\n")
@@ -427,7 +546,7 @@ func (m Model) viewOverlay(mode string) string {
 		} else {
 			title = "New Task"
 		}
-		hint = "Ctrl+D to save · Esc to cancel"
+		hint = "Enter to save · Shift+Enter for new line · Esc to cancel"
 		content = m.textarea.View()
 	} else {
 		title = "Set Deadline"
@@ -456,11 +575,81 @@ func (m Model) viewOverlay(mode string) string {
 	)
 }
 
+func (m Model) viewMenuOverlay(title string, items []menuItem) string {
+	titleRendered := ui.OverlayTitle.Render(title)
+	hintRendered := lipgloss.NewStyle().Foreground(ui.ColorMuted).Render("↑/↓ navigate · Enter select · Esc cancel")
+
+	var rows []string
+	for i, item := range items {
+		rendered := item.style.Render(item.label)
+		if i == m.menuCursor {
+			rendered = "▸ " + rendered
+		} else {
+			rendered = "  " + rendered
+		}
+		rows = append(rows, rendered)
+	}
+
+	content := strings.Join(rows, "\n")
+
+	card := ui.OverlayCard.Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			titleRendered,
+			"",
+			content,
+			"",
+			hintRendered,
+		),
+	)
+
+	return lipgloss.Place(m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		card,
+	)
+}
+
+func (m Model) viewDeadlineMenuOverlay() string {
+	titleRendered := ui.OverlayTitle.Render("Deadline")
+	hintRendered := lipgloss.NewStyle().Foreground(ui.ColorMuted).Render("↑/↓ navigate · Enter select · Esc cancel")
+
+	options := []string{"Today", "Tomorrow", "Next week", "Custom..."}
+	if m.editTask != nil && m.editTask.Deadline != nil {
+		options = append(options, "Clear deadline")
+	}
+
+	optStyle := lipgloss.NewStyle().Foreground(ui.ColorFg)
+	var rows []string
+	for i, opt := range options {
+		if i == m.menuCursor {
+			rows = append(rows, lipgloss.NewStyle().Foreground(ui.ColorPrimary).Bold(true).Render("▸ "+opt))
+		} else {
+			rows = append(rows, "  "+optStyle.Render(opt))
+		}
+	}
+
+	content := strings.Join(rows, "\n")
+
+	card := ui.OverlayCard.Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			titleRendered,
+			"",
+			content,
+			"",
+			hintRendered,
+		),
+	)
+
+	return lipgloss.Place(m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		card,
+	)
+}
+
 // visibleRowCount returns how many task rows fit in the viewport.
 // Each task is 3 lines. Chrome = header(1) + stats(1) + help(1) + border(2) = 5.
 func (m Model) visibleRowCount() int {
-	available := max(m.height-2-5, 3)
-	return available / 3
+	available := max(m.height-2-5, 4)
+	return available / 4
 }
 
 // taskCounts returns total, pending, and overdue task counts.
@@ -477,14 +666,14 @@ func (m Model) taskCounts() (total, pending, overdue int) {
 	return
 }
 
-// renderTaskRow renders a single task as a 3-line block.
+// renderTaskRow renders a single task as a card with a rounded border.
 func (m Model) renderTaskRow(t *task.Task, selected bool, width int) string {
-	style := ui.TaskRowNormal.Width(width)
+	cardStyle := ui.TaskCardNormal.Width(width - 2)
 	if selected {
-		style = ui.TaskRowSelected.Width(width)
+		cardStyle = ui.TaskCardSelected.Width(width - 2)
 	}
 
-	// Line 1: bullet + content + deadline (right-aligned).
+	// Line 1: bullet + content + deadline
 	var bullet string
 	if t.CompletedAt != nil {
 		bullet = lipgloss.NewStyle().Foreground(ui.ColorLow).Render("✓")
@@ -499,8 +688,6 @@ func (m Model) renderTaskRow(t *task.Task, selected bool, width int) string {
 	if len(lines) > 0 {
 		content = lines[0]
 	}
-
-	// Dim completed tasks.
 	if t.CompletedAt != nil {
 		content = lipgloss.NewStyle().Foreground(ui.ColorMuted).Strikethrough(true).Render(content)
 	}
@@ -518,23 +705,19 @@ func (m Model) renderTaskRow(t *task.Task, selected bool, width int) string {
 	leftPart := bullet + " " + content
 	leftW := lipgloss.Width(leftPart)
 	rightW := lipgloss.Width(deadline)
-	// Account for padding (2 on each side = 4).
-	availableForGap := max(width-4-leftW-rightW, 1)
+	innerW := width - 2 - 2
+	gap := max(innerW-leftW-rightW, 1)
+	line1 := leftPart + strings.Repeat(" ", gap) + deadline
 
-	line1 := style.Render(leftPart + strings.Repeat(" ", availableForGap) + deadline)
-
-	// Line 2: priority pill.
+	// Line 2: priority pill + overdue
 	pill := ui.PriorityPill(string(t.Priority))
 	var line2Extra string
 	if t.IsOverdue() {
 		line2Extra = "  " + ui.DeadlineOverdue.Render("overdue")
 	}
-	line2 := style.Render("  " + pill + line2Extra)
+	line2 := pill + line2Extra
 
-	// Line 3: blank spacer.
-	line3 := style.Render("")
-
-	return line1 + "\n" + line2 + "\n" + line3
+	return cardStyle.Render(line1 + "\n" + line2)
 }
 
 func splitLines(s string) []string {

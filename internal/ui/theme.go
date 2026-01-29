@@ -41,6 +41,19 @@ var (
 			Bold(true).
 			Padding(0, 2)
 
+	TaskCardNormal = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorBorder).
+			Foreground(ColorFg).
+			Padding(0, 1)
+
+	TaskCardSelected = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorPrimary).
+			Foreground(ColorPrimary).
+			Bold(true).
+			Padding(0, 1)
+
 	PriorityPillHigh = lipgloss.NewStyle().
 				Background(ColorHigh).
 				Foreground(ColorDark).

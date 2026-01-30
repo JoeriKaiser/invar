@@ -85,9 +85,10 @@ type Model struct {
 	menuCursor int
 	width      int
 	height    int
+	quickNew  bool
 }
 
-func New() (*Model, error) {
+func New(quickNew bool) (*Model, error) {
 	homeDir, _ := os.UserHomeDir()
 	dataDir := filepath.Join(homeDir, ".local", "share", "invar", "tasks")
 
@@ -116,6 +117,12 @@ func New() (*Model, error) {
 		inputMode: modeNew,
 		textarea:  ta,
 		textinput: ti,
+		quickNew:  quickNew,
+	}
+
+	if quickNew {
+		m.view = viewInput
+		m.textarea.Focus()
 	}
 
 	m.loadTasks()
@@ -174,6 +181,9 @@ func (m *Model) selectedTask() *task.Task {
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.quickNew {
+		return textarea.Blink
+	}
 	return nil
 }
 
@@ -293,6 +303,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		if m.quickNew {
+			return m, tea.Quit
+		}
 		m.view = viewList
 		m.editTask = nil
 		return m, nil
@@ -307,6 +320,9 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.store.Save(t)
 			}
 			m.loadTasks()
+		}
+		if m.quickNew {
+			return m, tea.Quit
 		}
 		m.view = viewList
 		m.editTask = nil

@@ -13,7 +13,9 @@ import (
 
 func main() {
 	var quickAdd string
+	var quickNew bool
 	flag.StringVar(&quickAdd, "n", "", "Quick add a new task")
+	flag.BoolVar(&quickNew, "new", false, "Open input modal for quick task creation")
 	flag.Parse()
 
 	if quickAdd != "" {
@@ -34,7 +36,7 @@ func main() {
 		return
 	}
 
-	m, err := app.New()
+	m, err := app.New(quickNew)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
